@@ -5,6 +5,7 @@
 ## Plataforma de laboratorios
 
 Te damos la bienvenida a la **plataforma de laboratorios** del curso **Spring Boot Reactive (WebFlux + Project Reactor)**. Aquí podrás explorar diferentes tecnologías a través de prácticas guiadas. ¡Desarrolla tus habilidades y lleva tus conocimientos al siguiente nivel!
+
 Curso práctico para desarrollar APIs no bloqueantes con Spring WebFlux y Project Reactor, optimizadas para alta concurrencia y orientadas a entornos empresariales.
 
 ## Lista de laboratorios
