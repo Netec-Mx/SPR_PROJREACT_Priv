@@ -1,12 +1,15 @@
+<img src="images/neteclogo (2).png" alt="logo" width="300"/>
+
 # Spring Boot Reactive (WebFlux + Project Reactor)
 
+## Plataforma de laboratorios
+
+Te damos la bienvenida a la **plataforma de laboratorios** del curso **Spring Boot Reactive (WebFlux + Project Reactor)**. Aquí podrás explorar diferentes tecnologías a través de prácticas guiadas. ¡Desarrolla tus habilidades y lleva tus conocimientos al siguiente nivel!
 Curso práctico para desarrollar APIs no bloqueantes con Spring WebFlux y Project Reactor, optimizadas para alta concurrencia y orientadas a entornos empresariales.
 
-## Estructura
-
-- `CapituloXX/README.md`: guía de laboratorio por capítulo.
-
 ## Lista de laboratorios
+
+Cada uno de estos laboratorios está diseñado para ofrecerte una experiencia práctica. Haz clic en los enlaces para comenzar.
 
 ### Capítulo 1
 
@@ -38,8 +41,13 @@ Curso práctico para desarrollar APIs no bloqueantes con Spring WebFlux y Projec
   - Descripción: Construir un proyecto demo end-to-end de una API reactiva empresarial, integrando diseño de entidades, endpoints, validaciones, persistencia no bloqueante, manejo de errores, retries, tests, métricas y checklist de calidad.
   - Duración estimada: 30 min
 
-## Flujo de colaboración
+## 📬 **Contacto y más información**
 
-- Trabajar en `changes_course`.
-- Crear Pull Request hacia `main`.
-- Merge por `Squash and merge`.
+
+
+Si tienes alguna pregunta o necesitas más detalles, no dudes en [contactarnos](mailto:soporte@netec.com). También puedes encontrar más recursos en nuestra [página](https://netec.com).
+
+---
+
+¡Gracias por visitar nuestra plataforma! No olvides revisar todos los laboratorios y comenzar tu viaje de aprendizaje hoy mismo.
+
