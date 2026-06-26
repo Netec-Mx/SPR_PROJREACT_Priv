@@ -1,5 +1,18 @@
 # Primeros pipelines reactivos con operadores
 
+## Flujo conceptual del laboratorio
+
+```mermaid
+flowchart LR
+    A[Cliente de prueba] --> B[Spring Boot y Project Reactor]
+    B --> C[Pipeline Mono o Flux]
+    C --> D[Operadores reactivos]
+    D --> E[Subscriber]
+    E --> F[Resultado o error]
+```
+
+El laboratorio trabaja inicialmente desde consola y pruebas. Este flujo prepara el modelo mental que Spring WebFlux utilizará después para procesar solicitudes HTTP sin bloquear.
+
 ## Metadatos
 
 | Campo            | Valor                                      |
@@ -10,6 +23,58 @@
 | **Tecnologías**  | Project Reactor 3.6, Spring Boot 3.3, Java 21, Maven 3.9 |
 
 ---
+
+## Guía didáctica de cierre
+
+### Escenario y objetivo operativo
+
+El equipo de `reactive-store` necesita comprender el modelo reactivo antes de publicar endpoints. Tu evidencia será una colección de pipelines y pruebas que demuestren cardinalidad, transformación, combinación, control de demanda y recuperación de errores.
+
+### Modelo mental
+
+| Imperativo | Reactivo |
+|---|---|
+| Obtiene un valor y después lo procesa. | Declara qué ocurrirá cuando el valor esté disponible. |
+| Esperar puede bloquear el hilo. | El consumidor recibe señales del publisher. |
+| Los errores se lanzan fuera del flujo. | Los errores son señales que pueden transformarse. |
+
+`Mono<T>` representa de cero a un elemento y `Flux<T>` de cero a muchos. Retornar estos tipos no convierte automáticamente una fuente bloqueante en no bloqueante.
+
+### Validación final observable
+
+- [ ] `mvn test` termina con `BUILD SUCCESS`.
+- [ ] Puedes explicar por qué una búsqueda por ID usa `Mono<Product>`.
+- [ ] Puedes distinguir `map`, `flatMap` y `concatMap`.
+- [ ] El fallback solo se activa ante el error esperado.
+- [ ] No existe `block()` dentro de un pipeline de producción.
+
+### Problemas comunes
+
+- Si no aparece salida, verifica que la demo de consola tenga un consumidor terminal.
+- Si `flatMap` cambia el orden, usa `concatMap` cuando el orden sea contractual.
+- Si una prueba temporal tarda segundos reales, usa `StepVerifier.withVirtualTime`.
+
+### Preguntas de reflexión
+
+1. ¿Por qué envolver JDBC en un `Mono` no lo vuelve no bloqueante?
+2. ¿Cuándo elegirías `concatMap` frente a `flatMap`?
+3. ¿Por qué `subscribe()` es aceptable como consumidor de consola, pero no dentro de un servicio WebFlux?
+4. ¿Qué estrategia de backpressure usarías si perder eventos no es aceptable?
+5. ¿Cuándo Spring MVC sería una opción más simple que WebFlux?
+
+WebFlux es especialmente útil para I/O concurrente, streaming e integraciones no bloqueantes. Un CRUD pequeño basado completamente en librerías bloqueantes puede ser más claro con Spring MVC.
+
+## Compatibilidad y seguridad
+
+PowerShell para verificar el entorno:
+
+```powershell
+java -version
+mvn -version
+$env:JAVA_HOME
+```
+
+Detén cualquier demo con `Ctrl+C` en la terminal que la inició o con **Stop** en el IDE. No finalices todos los procesos Java del equipo. Este capítulo no requiere secretos ni archivos `.env`.
 
 ## Descripción General
 
@@ -92,11 +157,11 @@ Apache Maven 3.9.6
    |------------------|--------------------------------|
    | Project          | Maven                          |
    | Language         | Java                           |
-   | Spring Boot      | 3.3.x (la más reciente estable)|
-   | Group            | com.curso.reactivo              |
-   | Artifact         | reactor-lab01                  |
-   | Name             | reactor-lab01                  |
-   | Package name     | com.curso.reactivo.lab01       |
+   | Spring Boot      | 3.3.5 (la más reciente estable)|
+   | Group            | com.netec                       |
+   | Artifact         | reactive-store                  |
+   | Name             | reactive-store                  |
+   | Package name     | com.netec.reactivestore       |
    | Packaging        | Jar                            |
    | Java             | 21                             |
 
@@ -107,7 +172,7 @@ Apache Maven 3.9.6
 
 4. Haz clic en **Generate** y descarga el archivo `.zip`.
 
-5. Descomprime el archivo en tu directorio de trabajo (por ejemplo `~/proyectos/reactor-lab01`) y ábrelo en IntelliJ IDEA.
+5. Descomprime el archivo en tu directorio de trabajo (por ejemplo `~/proyectos/reactive-store`) y ábrelo en IntelliJ IDEA.
 
 6. Verifica que el `pom.xml` contiene la dependencia de Reactor:
 
@@ -116,7 +181,7 @@ Apache Maven 3.9.6
 <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.x</version>
+    <version>3.3.5</version>
 </parent>
 
 <dependencies>
@@ -164,10 +229,10 @@ Abre el archivo `pom.xml` en IntelliJ y confirma que las dependencias `spring-bo
 
 #### Instrucciones
 
-1. Crea el paquete `com.curso.reactivo.lab01.ejercicio1` y dentro crea la clase `EjercicioMonoFlux`:
+1. Crea el paquete `com.netec.reactivestore.ejercicio1` y dentro crea la clase `EjercicioMonoFlux`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio1;
+package com.netec.reactivestore.ejercicio1;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -182,11 +247,11 @@ public class EjercicioMonoFlux {
         System.out.println("=== MONO SIMPLE ===");
 
         // Mono: representa 0 o 1 elemento (promesa de un valor futuro)
-        Mono<String> monoProducto = Mono.just("Laptop Pro X1");
+        Mono<String> monoProduct = Mono.just("Laptop Pro X1");
 
         // Suscripción explícita: el pipeline NO se ejecuta hasta que hay un suscriptor
-        monoProducto.subscribe(
-            valor  -> System.out.println("Producto recibido: " + valor),
+        monoProduct.subscribe(
+            valor  -> System.out.println("Product recibido: " + valor),
             error  -> System.err.println("Error: " + error.getMessage()),
             ()     -> System.out.println("Mono completado.")
         );
@@ -205,9 +270,9 @@ public class EjercicioMonoFlux {
         System.out.println("\n=== FLUX DESDE LISTA ===");
 
         List<String> catalogo = List.of("Laptop", "Mouse", "Teclado", "Monitor", "Auriculares");
-        Flux<String> fluxProductos = Flux.fromIterable(catalogo);
+        Flux<String> fluxProducts = Flux.fromIterable(catalogo);
 
-        fluxProductos.subscribe(
+        fluxProducts.subscribe(
             item      -> System.out.println("Ítem: " + item),
             error     -> System.err.println("Error: " + error),
             ()        -> System.out.println("Flux completado. Total ítems procesados: " + catalogo.size())
@@ -218,8 +283,8 @@ public class EjercicioMonoFlux {
 
         // block() es ACEPTABLE aquí porque estamos en main() para observar resultados.
         // NUNCA uses block() en un controller WebFlux o en un pipeline de producción.
-        String productoObtenido = Mono.just("Teclado Mecánico").block();
-        System.out.println("Valor obtenido con block(): " + productoObtenido);
+        String productObtenido = Mono.just("Teclado Mecánico").block();
+        System.out.println("Valor obtenido con block(): " + productObtenido);
 
         System.out.println("\n=== NO BLOQUEANTE (forma correcta en producción) ===");
         // En producción, retornarías el Mono y el framework se suscribe:
@@ -235,7 +300,7 @@ public class EjercicioMonoFlux {
 #### Salida esperada
 ```
 === MONO SIMPLE ===
-Producto recibido: Laptop Pro X1
+Product recibido: Laptop Pro X1
 Mono completado.
 
 === MONO VACÍO ===
@@ -272,7 +337,7 @@ Procesado reactivamente: Teclado Mecánico
 1. Crea la clase `EjercicioFactories` en el paquete `ejercicio2`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio2;
+package com.netec.reactivestore.ejercicio2;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SynchronousSink;
@@ -285,21 +350,21 @@ public class EjercicioFactories {
 
         // ─── 1. Flux.generate: fuente síncrona con estado ─────────────────
         // Útil para generar secuencias infinitas o calculadas
-        System.out.println("=== FLUX.GENERATE (IDs de pedido secuenciales) ===");
+        System.out.println("=== FLUX.GENERATE (IDs de producto secuenciales) ===");
 
-        Flux<String> generadorPedidos = Flux.generate(
-            () -> 1000,                          // estado inicial: primer ID de pedido
+        Flux<String> generadorProductos = Flux.generate(
+            () -> 1000,                          // estado inicial: primer ID de producto
             (estado, sink) -> {
-                sink.next("PEDIDO-" + estado);   // emite el siguiente elemento
+                sink.next("PRODUCT-" + estado);  // emite el siguiente elemento
                 if (estado >= 1004) {
-                    sink.complete();             // termina después de 5 pedidos
+                    sink.complete();             // termina después de 5 productos
                 }
                 return estado + 1;               // nuevo estado para la próxima llamada
             }
         );
 
-        generadorPedidos.subscribe(
-            pedido -> System.out.println("Generado: " + pedido),
+        generadorProductos.subscribe(
+            productId -> System.out.println("Generado: " + productId),
             err    -> System.err.println("Error: " + err),
             ()     -> System.out.println("Generación completada.")
         );
@@ -343,12 +408,12 @@ public class EjercicioFactories {
 
 #### Salida esperada
 ```
-=== FLUX.GENERATE (IDs de pedido secuenciales) ===
-Generado: PEDIDO-1000
-Generado: PEDIDO-1001
-Generado: PEDIDO-1002
-Generado: PEDIDO-1003
-Generado: PEDIDO-1004
+=== FLUX.GENERATE (IDs de producto secuenciales) ===
+Generado: PRODUCT-1000
+Generado: PRODUCT-1001
+Generado: PRODUCT-1002
+Generado: PRODUCT-1003
+Generado: PRODUCT-1004
 Generación completada.
 
 === FLUX.CREATE (simulando eventos de inventario) ===
@@ -367,7 +432,7 @@ ID: 5
 ```
 
 #### Verificación
-- `Flux.generate()` emite exactamente 5 pedidos (PEDIDO-1000 a PEDIDO-1004) y se completa.
+- `Flux.generate()` emite exactamente 5 productos (PRODUCT-1000 a PRODUCT-1004) y se completa.
 - `Flux.create()` adapta el array de strings como si fuera una fuente de eventos externa.
 - Nota la diferencia conceptual: `generate` es **síncrono** (un elemento a la vez, controlado por el sink), mientras que `create` es **asíncrono** (puede emitir múltiples elementos desde distintos hilos).
 
@@ -375,98 +440,122 @@ ID: 5
 
 ### Paso 4 — Ejercicio 3: Operadores de transformación (`map`, `flatMap`, `filter`)
 
-**Objetivo:** Aplicar los operadores de transformación más comunes para enriquecer y filtrar datos en un pipeline reactivo, modelando una capa de servicio de productos.
+**Objetivo:** Aplicar los operadores de transformación más comunes para enriquecer y filtrar datos en un pipeline reactivo, modelando una capa de servicio de products.
 
 #### Instrucciones
 
-1. Primero, crea los records de dominio en el paquete `com.curso.reactivo.lab01.modelo`:
+1. Primero, crea los records de dominio en el paquete `com.netec.reactivestore.model`:
 
 ```java
-package com.curso.reactivo.lab01.modelo;
+package com.netec.reactivestore.model;
 
-public record Producto(String id, String nombre, double precio, String categoria) {}
-public record ProductoEnriquecido(Producto producto, double precioConIva, String etiqueta) {}
+import java.math.BigDecimal;
+
+public record Product(
+    String id,
+    String name,
+    String description,
+    BigDecimal price,
+    Integer stock,
+    Boolean active
+) {}
+
+public record EnrichedProduct(
+    Product product,
+    BigDecimal priceWithTax,
+    String label
+) {}
 ```
 
 2. Crea la clase `EjercicioTransformacion` en el paquete `ejercicio3`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio3;
+package com.netec.reactivestore.ejercicio3;
 
-import com.curso.reactivo.lab01.modelo.Producto;
-import com.curso.reactivo.lab01.modelo.ProductoEnriquecido;
+import com.netec.reactivestore.model.Product;
+import com.netec.reactivestore.model.EnrichedProduct;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public class EjercicioTransformacion {
 
     // Simula una llamada reactiva a un servicio externo de enriquecimiento
-    private static Mono<ProductoEnriquecido> enriquecerProducto(Producto p) {
-        double iva = p.precio() * 1.19;
-        String etiqueta = p.precio() > 500 ? "PREMIUM" : "ESTÁNDAR";
-        return Mono.just(new ProductoEnriquecido(p, iva, etiqueta));
+    private static Mono<EnrichedProduct> enrichProduct(Product product) {
+        BigDecimal priceWithTax =
+            product.price().multiply(new BigDecimal("1.19"));
+        String label = product.price().compareTo(new BigDecimal("500")) > 0
+            ? "PREMIUM" : "ESTÁNDAR";
+        return Mono.just(new EnrichedProduct(product, priceWithTax, label));
     }
 
     public static void main(String[] args) {
 
-        List<Producto> productos = List.of(
-            new Producto("P001", "Laptop Pro",    1200.0, "ELECTRÓNICA"),
-            new Producto("P002", "Mouse Inalámbrico", 35.0, "PERIFÉRICO"),
-            new Producto("P003", "Monitor 4K",    850.0, "ELECTRÓNICA"),
-            new Producto("P004", "Teclado Mecánico", 120.0, "PERIFÉRICO"),
-            new Producto("P005", "Auriculares BT", 200.0, "AUDIO")
+        List<Product> products = List.of(
+            new Product("P001", "Laptop Pro", "Equipo de desarrollo",
+                new BigDecimal("1200.00"), 12, true),
+            new Product("P002", "Mouse Inalámbrico", "Periférico",
+                new BigDecimal("35.00"), 40, true),
+            new Product("P003", "Monitor 4K", "Monitor IPS",
+                new BigDecimal("850.00"), 8, true),
+            new Product("P004", "Teclado Mecánico", "Periférico",
+                new BigDecimal("120.00"), 0, false),
+            new Product("P005", "Auriculares BT", "Audio",
+                new BigDecimal("200.00"), 18, true)
         );
 
         // ─── 1. map: transformación sincrónica 1-a-1 ──────────────────────
-        System.out.println("=== MAP: nombres en mayúsculas ===");
+        System.out.println("=== MAP: names en mayúsculas ===");
 
-        Flux.fromIterable(productos)
-            .map(p -> p.nombre().toUpperCase())
-            .subscribe(nombre -> System.out.println("  " + nombre));
+        Flux.fromIterable(products)
+            .map(p -> p.name().toUpperCase())
+            .subscribe(name -> System.out.println("  " + name));
 
         // ─── 2. filter: filtrado por condición ────────────────────────────
-        System.out.println("\n=== FILTER: solo productos > $100 ===");
+        System.out.println("\n=== FILTER: solo products > $100 ===");
 
-        Flux.fromIterable(productos)
-            .filter(p -> p.precio() > 100)
-            .subscribe(p -> System.out.printf("  %s - $%.2f%n", p.nombre(), p.precio()));
+        Flux.fromIterable(products)
+            .filter(p -> p.price().compareTo(new BigDecimal("100")) > 0)
+            .subscribe(p -> System.out.printf("  %s - $%.2f%n", p.name(), p.price()));
 
         // ─── 3. flatMap: transformación asíncrona 1-a-N ───────────────────
         // flatMap suscribe a cada Mono/Flux interno y aplana los resultados
         // IMPORTANTE: flatMap puede reordenar elementos (no garantiza orden)
         System.out.println("\n=== FLAT_MAP: enriquecimiento reactivo (puede reordenar) ===");
 
-        Flux.fromIterable(productos)
-            .filter(p -> p.categoria().equals("ELECTRÓNICA"))
-            .flatMap(EjercicioTransformacion::enriquecerProducto)
+        Flux.fromIterable(products)
+            .filter(Product::active)
+            .flatMap(EjercicioTransformacion::enrichProduct)
             .subscribe(pe -> System.out.printf(
                 "  %s | Precio+IVA: $%.2f | Etiqueta: %s%n",
-                pe.producto().nombre(), pe.precioConIva(), pe.etiqueta()
+                pe.product().name(), pe.priceWithTax(), pe.label()
             ));
 
         // ─── 4. concatMap: transformación asíncrona que PRESERVA el orden ─
         System.out.println("\n=== CONCAT_MAP: enriquecimiento reactivo (orden garantizado) ===");
 
-        Flux.fromIterable(productos)
-            .filter(p -> p.categoria().equals("ELECTRÓNICA"))
-            .concatMap(EjercicioTransformacion::enriquecerProducto)
+        Flux.fromIterable(products)
+            .filter(Product::active)
+            .concatMap(EjercicioTransformacion::enrichProduct)
             .subscribe(pe -> System.out.printf(
                 "  %s | Precio+IVA: $%.2f | Etiqueta: %s%n",
-                pe.producto().nombre(), pe.precioConIva(), pe.etiqueta()
+                pe.product().name(), pe.priceWithTax(), pe.label()
             ));
 
         // ─── 5. Cadena completa: filter → map → flatMap ───────────────────
         System.out.println("\n=== PIPELINE COMPLETO: ELECTRÓNICA → enriquecer → formatear ===");
 
-        Flux.fromIterable(productos)
-            .filter(p -> p.categoria().equals("ELECTRÓNICA"))
-            .map(p -> new Producto(p.id(), p.nombre().toUpperCase(), p.precio(), p.categoria()))
-            .flatMap(EjercicioTransformacion::enriquecerProducto)
+        Flux.fromIterable(products)
+            .filter(Product::active)
+            .map(p -> new Product(
+                p.id(), p.name().toUpperCase(), p.description(),
+                p.price(), p.stock(), p.active()))
+            .flatMap(EjercicioTransformacion::enrichProduct)
             .subscribe(pe -> System.out.printf(
                 "  [%s] %s → $%.2f (con IVA)%n",
-                pe.etiqueta(), pe.producto().nombre(), pe.precioConIva()
+                pe.label(), pe.product().name(), pe.priceWithTax()
             ));
     }
 }
@@ -474,14 +563,14 @@ public class EjercicioTransformacion {
 
 #### Salida esperada
 ```
-=== MAP: nombres en mayúsculas ===
+=== MAP: names en mayúsculas ===
   LAPTOP PRO
   MOUSE INALÁMBRICO
   MONITOR 4K
   TECLADO MECÁNICO
   AURICULARES BT
 
-=== FILTER: solo productos > $100 ===
+=== FILTER: solo products > $100 ===
   Laptop Pro - $1200.00
   Monitor 4K - $850.00
   Teclado Mecánico - $120.00
@@ -502,23 +591,23 @@ public class EjercicioTransformacion {
 
 #### Verificación
 - `map` transforma de forma sincrónica (1-a-1): cada elemento entra y sale como un elemento distinto.
-- `filter` elimina los productos con precio ≤ $100 (Mouse e implícitamente Teclado y Auriculares en la sección de ELECTRÓNICA).
+- `filter` elimina los products con price ≤ $100 (Mouse e implícitamente Teclado y Auriculares en la sección de ELECTRÓNICA).
 - `flatMap` y `concatMap` producen el mismo resultado en este caso síncrono; la diferencia se manifiesta con operaciones verdaderamente asíncronas (con delays).
 
 ---
 
 ### Paso 5 — Ejercicio 4: Operadores de combinación (`merge`, `zip`, `concat`)
 
-**Objetivo:** Combinar múltiples fuentes reactivas para simular el patrón de composición paralela descrito en la lección 1.1 (obtener producto + precio + inventario en paralelo).
+**Objetivo:** Combinar múltiples fuentes reactivas para simular el patrón de composición paralela descrito en la lección 1.1 (obtener product + price + inventario en paralelo).
 
 #### Instrucciones
 
 1. Crea la clase `EjercicioCombinacion` en el paquete `ejercicio4`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio4;
+package com.netec.reactivestore.ejercicio4;
 
-import com.curso.reactivo.lab01.modelo.Producto;
+import com.netec.reactivestore.model.Product;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -527,17 +616,17 @@ import java.time.Duration;
 public class EjercicioCombinacion {
 
     // Servicios simulados con latencia artificial
-    private static Mono<String> obtenerPrecio(String productoId) {
+    private static Mono<String> obtenerPrecio(String productId) {
         return Mono.just("$1200.00")
                    .delayElement(Duration.ofMillis(100)); // simula latencia de red
     }
 
-    private static Mono<Integer> verificarInventario(String productoId) {
+    private static Mono<Integer> verificarInventario(String productId) {
         return Mono.just(42)
                    .delayElement(Duration.ofMillis(150)); // simula latencia de BD
     }
 
-    private static Mono<String> obtenerCategoria(String productoId) {
+    private static Mono<String> obtenerCategoria(String productId) {
         return Mono.just("ELECTRÓNICA")
                    .delayElement(Duration.ofMillis(80));  // simula latencia de caché
     }
@@ -554,7 +643,7 @@ public class EjercicioCombinacion {
             verificarInventario("P001"),
             obtenerCategoria("P001")
         ).map(tuple -> String.format(
-            "Producto P001 | Precio: %s | Stock: %d | Categoría: %s",
+            "Product P001 | Precio: %s | Stock: %d | Categoría: %s",
             tuple.getT1(), tuple.getT2(), tuple.getT3()
         ));
 
@@ -590,10 +679,10 @@ public class EjercicioCombinacion {
         // ─── 4. Flux.zip: combina elemento a elemento ─────────────────────
         System.out.println("\n=== FLUX.ZIP: emparejamiento elemento a elemento ===");
 
-        Flux<String> nombres  = Flux.just("Laptop", "Mouse", "Monitor");
-        Flux<Double> precios  = Flux.just(1200.0, 35.0, 850.0);
+        Flux<String> names  = Flux.just("Laptop", "Mouse", "Monitor");
+        Flux<Double> prices  = Flux.just(1200.0, 35.0, 850.0);
 
-        Flux.zip(nombres, precios)
+        Flux.zip(names, prices)
             .map(tuple -> tuple.getT1() + " → $" + tuple.getT2())
             .subscribe(par -> System.out.println("  " + par));
     }
@@ -605,7 +694,7 @@ public class EjercicioCombinacion {
 #### Salida esperada
 ```
 === MONO.ZIP: composición paralela de 3 servicios ===
-  Producto P001 | Precio: $1200.00 | Stock: 42 | Categoría: ELECTRÓNICA
+  Product P001 | Precio: $1200.00 | Stock: 42 | Categoría: ELECTRÓNICA
   Tiempo total: ~155 ms (esperado ~150 ms, no ~330 ms)
 
 === FLUX.MERGE: fuentes intercaladas (sin orden garantizado) ===
@@ -642,7 +731,7 @@ A B C D E F
 1. Crea la clase `EjercicioTemporalizacion` en el paquete `ejercicio5`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio5;
+package com.netec.reactivestore.ejercicio5;
 
 import reactor.core.publisher.Flux;
 
@@ -674,19 +763,19 @@ public class EjercicioTemporalizacion {
             .doOnNext(msg -> System.out.println("  " + msg))
             .blockLast();
 
-        // ─── 3. Combinación: interval + map para simular precios en tiempo real ──
+        // ─── 3. Combinación: interval + map para simular prices en tiempo real ──
         System.out.println("\n=== PRECIOS EN TIEMPO REAL (simulado con interval) ===");
 
-        double[] precioBase = {100.0};
+        double[] priceBase = {100.0};
 
         Flux.interval(Duration.ofMillis(250))
             .take(6)
             .map(tick -> {
-                // Simula fluctuación de precio
-                precioBase[0] += (Math.random() * 10 - 5);
-                return String.format("BTC/USD: $%.2f", precioBase[0]);
+                // Simula fluctuación de price
+                priceBase[0] += (Math.random() * 10 - 5);
+                return String.format("BTC/USD: $%.2f", priceBase[0]);
             })
-            .subscribe(precio -> System.out.println("  " + precio));
+            .subscribe(price -> System.out.println("  " + price));
 
         // Esperamos a que el interval termine (6 ticks × 250 ms = ~1500 ms)
         Thread.sleep(2000);
@@ -738,7 +827,7 @@ Simulación completada.
 1. Crea la clase `EjercicioBackpressure` en el paquete `ejercicio6`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio6;
+package com.netec.reactivestore.ejercicio6;
 
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
@@ -854,7 +943,7 @@ public class EjercicioBackpressure {
 1. Crea la clase `EjercicioErrores` en el paquete `ejercicio7`:
 
 ```java
-package com.curso.reactivo.lab01.ejercicio7;
+package com.netec.reactivestore.ejercicio7;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -868,14 +957,14 @@ public class EjercicioErrores {
     private static final AtomicInteger intentos = new AtomicInteger(0);
 
     // Simula un servicio externo que falla intermitentemente
-    private static Mono<String> servicioInestable(String productoId) {
+    private static Mono<String> servicioInestable(String productId) {
         int intento = intentos.incrementAndGet();
-        System.out.println("    → Intento #" + intento + " para " + productoId);
+        System.out.println("    → Intento #" + intento + " para " + productId);
 
         if (intento < 3) {
             return Mono.error(new RuntimeException("Servicio no disponible (intento " + intento + ")"));
         }
-        return Mono.just("Datos del producto: " + productoId);
+        return Mono.just("Datos del product: " + productId);
     }
 
     public static void main(String[] args) throws InterruptedException {
@@ -888,7 +977,7 @@ public class EjercicioErrores {
                 if (id.startsWith("ERROR")) {
                     throw new IllegalArgumentException("ID inválido: " + id);
                 }
-                return "Producto: " + id;
+                return "Product: " + id;
             })
             .onErrorReturn("PRODUCTO_DESCONOCIDO")  // el Flux termina con este valor
             .subscribe(
@@ -904,7 +993,7 @@ public class EjercicioErrores {
                 if (id.startsWith("ERROR")) {
                     throw new IllegalArgumentException("ID inválido: " + id);
                 }
-                return "Producto: " + id;
+                return "Product: " + id;
             })
             .onErrorContinue((err, item) ->
                 System.out.println("  ⚠ Saltando elemento problemático: " + item + " → " + err.getMessage())
@@ -964,16 +1053,16 @@ public class EjercicioErrores {
 #### Salida esperada
 ```
 === ON_ERROR_RETURN: valor por defecto ante fallo ===
-  Producto: P001
-  Producto: P002
+  Product: P001
+  Product: P002
   PRODUCTO_DESCONOCIDO
 
 === ON_ERROR_CONTINUE: ignorar elementos erróneos y continuar ===
-  Producto: P001
-  Producto: P002
+  Product: P001
+  Product: P002
   ⚠ Saltando elemento problemático: ERROR_ITEM → ID inválido: ERROR_ITEM
-  Producto: P003
-  Producto: P004
+  Product: P003
+  Product: P004
 
 === ON_ERROR_RESUME: pipeline de fallback ===
   Error detectado: BD no disponible
@@ -986,7 +1075,7 @@ public class EjercicioErrores {
     → Intento #2 para P001
   Reintentando... intento #2
     → Intento #3 para P001
-  Éxito: Datos del producto: P001
+  Éxito: Datos del product: P001
 
 === RETRY + ON_ERROR_RESUME: máxima resiliencia ===
     → Intento #1 para P002
@@ -1005,12 +1094,12 @@ public class EjercicioErrores {
 
 ## Validación y Pruebas
 
-Crea la clase de test `PipelinesReactivosTest` en `src/test/java/com/curso/reactivo/lab01/`:
+Crea la clase de test `PipelinesReactivosTest` en `src/test/java/com/netec/reactivestore/`:
 
 ```java
-package com.curso.reactivo.lab01;
+package com.netec.reactivestore;
 
-import com.curso.reactivo.lab01.modelo.Producto;
+import com.netec.reactivestore.model.Product;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -1062,10 +1151,10 @@ class PipelinesReactivosTest {
     @Test
     @DisplayName("map transforma cada elemento correctamente")
     void mapTransformaElementos() {
-        Flux<String> nombres = Flux.just("laptop", "mouse")
+        Flux<String> names = Flux.just("laptop", "mouse")
                                    .map(String::toUpperCase);
 
-        StepVerifier.create(nombres)
+        StepVerifier.create(names)
             .expectNext("LAPTOP", "MOUSE")
             .expectComplete()
             .verify();
@@ -1105,11 +1194,11 @@ class PipelinesReactivosTest {
     @Test
     @DisplayName("Mono.zip combina tres fuentes cuando todas completan")
     void monoZipCombinaTresFuentes() {
-        Mono<String>  precio     = Mono.just("$100");
+        Mono<String>  price     = Mono.just("$100");
         Mono<Integer> stock      = Mono.just(50);
-        Mono<String>  categoria  = Mono.just("ELECTRÓNICA");
+        Mono<String>  category  = Mono.just("ELECTRÓNICA");
 
-        Mono<String> combinado = Mono.zip(precio, stock, categoria)
+        Mono<String> combinado = Mono.zip(price, stock, category)
             .map(t -> t.getT1() + "|" + t.getT2() + "|" + t.getT3());
 
         StepVerifier.create(combinado)
@@ -1201,7 +1290,7 @@ Este laboratorio no utiliza Docker ni bases de datos externas, por lo que la lim
    git commit -m "Lab 01-00-01: Primeros pipelines reactivos con Project Reactor"
    ```
 
-> **Nota para labs siguientes:** El proyecto `reactor-lab01` es independiente y no es extendido directamente por el Lab 02. Sin embargo, los patrones aprendidos aquí (`Mono`, `Flux`, operadores, backpressure, manejo de errores) son la base de todos los labs posteriores. Conserva el código como referencia.
+> **Nota para labs siguientes:** Conserva `reactive-store`. El Lab 02 continuará sobre este mismo proyecto, paquete base y modelo `Product`.
 
 ---
 
@@ -1224,7 +1313,7 @@ En esta práctica construiste una progresión completa de pipelines reactivos co
 - **`block()` es un antipatrón en producción**: solo es aceptable en `main()` o tests. En un controller WebFlux o dentro de un pipeline reactivo, bloquea el event loop y anula todos los beneficios del modelo reactivo.
 - **Nada ocurre hasta que hay un suscriptor**: los pipelines reactivos son *lazy* (perezosos). La cadena de operadores describe *qué* hacer, pero no se ejecuta hasta que `subscribe()` o `block()` son llamados.
 - **`flatMap` vs `concatMap`**: `flatMap` maximiza el paralelismo (puede reordenar), `concatMap` preserva el orden (suscribe secuencialmente).
-- **Backpressure es un mecanismo de protección**: evita que un productor rápido desborde a un suscriptor lento. Elige la estrategia según el caso de uso: buffer (tolera picos), drop (descarta exceso), limitRate (controla demanda).
+- **Backpressure es un mecanismo de protección**: evita que un productr rápido desborde a un suscriptor lento. Elige la estrategia según el caso de uso: buffer (tolera picos), drop (descarta exceso), limitRate (controla demanda).
 
 ### Recursos adicionales
 
