@@ -3,6 +3,24 @@ LAB_ID: 03-00-01
 ---MARKDOWN---
 # Integrar BD Reactiva + Endpoints de Consulta
 
+## Arquitectura del laboratorio
+
+```mermaid
+flowchart LR
+    A[Cliente HTTP] --> B[API Reactive Store]
+    B --> C[ProductService]
+    C --> D{Perfil activo}
+    D --> E[R2DBC y PostgreSQL]
+    D --> F[MongoDB Reactive]
+    C --> G[WebClient]
+    G --> H[API externa de precios]
+    H --> I[Mono o Flux]
+    I --> C
+    C --> A
+```
+
+El controller conserva el mismo contrato mientras el perfil selecciona la persistencia. WebClient añade información externa mediante un pipeline compuesto con timeout, retry selectivo y fallback.
+
 ## Metadatos
 
 | Campo         | Valor                                      |
@@ -17,6 +35,8 @@ LAB_ID: 03-00-01
 ## Visión General
 
 En este laboratorio construirás una **API de catálogo de productos** que integra dos estrategias de persistencia reactiva intercambiables mediante perfiles de Spring: el perfil `relational` usa R2DBC con PostgreSQL, y el perfil `document` usa MongoDB Reactive. Ambas implementaciones exponen la misma interfaz de servicio, lo que te permitirá comparar las diferencias en configuración, mapeo y comportamiento. Adicionalmente, implementarás streaming de resultados con `Flux`, paginación reactiva, transacciones reactivas con rollback demostrable y un `WebClient` con retry exponencial y fallback que consume un servicio externo simulado con `MockWebServer`.
+
+Este capítulo continúa el proyecto `reactive-store` del capítulo 2. Mantén el paquete base `com.netec.reactivestore`, el modelo `Product`, el endpoint `/api/products`, Maven, Java 21 y Spring Boot 3.3.5.
 
 > ⚠️ **ANTIPATRÓN CRÍTICO**: Nunca uses `block()`, `blockFirst()` o `blockLast()` dentro de un controller WebFlux o en un pipeline reactivo en producción. Estos métodos solo son aceptables en el método `main()` o en tests. Este laboratorio refuerza ese principio en cada bloque.
 
@@ -45,7 +65,7 @@ En este laboratorio construirás una **API de catálogo de productos** que integ
 - Apache Maven 3.9.x.
 - IntelliJ IDEA 2024.1+.
 - Docker Desktop / Docker Engine 24.x funcional (`docker compose` disponible).
-- Spring Boot 3.3.x (se configura en el `pom.xml`).
+- Spring Boot 3.3.5 (se configura en el `pom.xml`).
 - Conexión a Internet para descargar dependencias de Maven Central e imágenes de Docker Hub.
 
 ---
@@ -66,7 +86,7 @@ En este laboratorio construirás una **API de catálogo de productos** que integ
 |-------------------------|--------------|
 | JDK                     | 21 LTS       |
 | Maven                   | 3.9.x        |
-| Spring Boot             | 3.3.x        |
+| Spring Boot             | 3.3.5        |
 | Docker Engine           | 24.x+        |
 | PostgreSQL (Docker)     | 16-alpine    |
 | MongoDB (Docker)        | 7.0          |
@@ -107,19 +127,19 @@ docker pull hello-world
 ### Bloque 1 — Configuración del Proyecto y Docker Compose (25 min)
 
 #### Objetivo
-Crear el proyecto Spring Boot base con todas las dependencias necesarias y levantar PostgreSQL y MongoDB en Docker.
+Ampliar el proyecto Spring Boot existente con las dependencias de persistencia y levantar PostgreSQL y MongoDB en Docker.
 
 #### Instrucciones
 
-**1.1 Crear el proyecto Maven**
+**1.1 Continuar el proyecto Maven**
 
-Crea la estructura de directorios del proyecto:
+Ubícate en el proyecto existente y crea únicamente la estructura faltante:
 
 ```bash
-mkdir lab03-catalog-api && cd lab03-catalog-api
-mkdir -p src/main/java/com/curso/catalog/{config,controller,domain,repository,service,client}
+cd reactive-store
+mkdir -p src/main/java/com/netec/reactivestore/{config,controller,model,repository,service,client}
 mkdir -p src/main/resources
-mkdir -p src/test/java/com/curso/catalog
+mkdir -p src/test/java/com/netec/reactivestore
 ```
 
 **1.2 Crear el `pom.xml`**
@@ -141,10 +161,10 @@ Crea el archivo `pom.xml` en la raíz del proyecto con el siguiente contenido:
         <relativePath/>
     </parent>
 
-    <groupId>com.curso</groupId>
-    <artifactId>lab03-catalog-api</artifactId>
+    <groupId>com.netec</groupId>
+    <artifactId>reactive-store</artifactId>
     <version>1.0.0-SNAPSHOT</version>
-    <name>lab03-catalog-api</name>
+    <name>reactive-store</name>
 
     <properties>
         <java.version>21</java.version>
@@ -253,27 +273,27 @@ version: "3.9"
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: lab03-postgres
+    container_name: reactive-store-postgres
     environment:
-      POSTGRES_DB: catalogdb
-      POSTGRES_USER: catalog_user
-      POSTGRES_PASSWORD: catalog_pass
+      POSTGRES_DB: reactivestoredb
+      POSTGRES_USER: ${DATABASE_USERNAME}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./src/main/resources/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U catalog_user -d catalogdb"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME} -d reactivestoredb"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   mongodb:
     image: mongo:7.0
-    container_name: lab03-mongodb
+    container_name: reactive-store-mongodb
     environment:
-      MONGO_INITDB_DATABASE: catalogdb
+      MONGO_INITDB_DATABASE: reactivestoredb
     ports:
       - "27017:27017"
     volumes:
@@ -325,18 +345,18 @@ INSERT INTO products (name, description, category, price, stock) VALUES
 
 **1.5 Crear la clase principal de la aplicación**
 
-Archivo `src/main/java/com/curso/catalog/CatalogApplication.java`:
+Archivo `src/main/java/com/netec/reactivestore/ReactiveStoreApplication.java`:
 
 ```java
-package com.curso.catalog;
+package com.netec.reactivestore;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class CatalogApplication {
+public class ReactiveStoreApplication {
     public static void main(String[] args) {
-        SpringApplication.run(CatalogApplication.class, args);
+        SpringApplication.run(ReactiveStoreApplication.class, args);
     }
 }
 ```
@@ -349,19 +369,19 @@ Archivo `src/main/resources/application.yml`:
 # Configuración base de la aplicación
 spring:
   application:
-    name: lab03-catalog-api
+    name: reactive-store
   # Perfil activo por defecto: relational (R2DBC + PostgreSQL)
   profiles:
-    active: relational
+    active: ${PROFILE_NAME:relational}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 logging:
   level:
-    com.curso.catalog: DEBUG
-    org.springframework.data.r2dbc: DEBUG
-    org.springframework.data.mongodb: DEBUG
+    com.netec.reactivestore: ${APP_LOG_LEVEL:INFO}
+    org.springframework.data.r2dbc: ${DATA_LOG_LEVEL:INFO}
+    org.springframework.data.mongodb: ${DATA_LOG_LEVEL:INFO}
 
 ---
 # Perfil 'relational': R2DBC + PostgreSQL
@@ -370,9 +390,9 @@ spring:
     activate:
       on-profile: relational
   r2dbc:
-    url: r2dbc:postgresql://localhost:5432/catalogdb
-    username: catalog_user
-    password: catalog_pass
+    url: ${DATABASE_URL:r2dbc:postgresql://localhost:5432/reactivestoredb}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
     pool:
       initial-size: 5
       max-size: 20
@@ -390,7 +410,7 @@ spring:
       on-profile: document
   data:
     mongodb:
-      uri: mongodb://localhost:27017/catalogdb
+      uri: ${MONGODB_URL:mongodb://localhost:27017/reactivestoredb}
   # Deshabilitar autoconfiguración de R2DBC cuando usamos perfil documental
   autoconfigure:
     exclude:
@@ -408,18 +428,18 @@ docker compose up -d
 docker compose ps
 
 # Verificar conectividad a PostgreSQL
-docker exec lab03-postgres psql -U catalog_user -d catalogdb -c "SELECT COUNT(*) FROM products;"
+docker exec reactive-store-postgres psql -U ${DATABASE_USERNAME} -d reactivestoredb -c "SELECT COUNT(*) FROM products;"
 
 # Verificar conectividad a MongoDB
-docker exec lab03-mongodb mongosh --eval "db.adminCommand('ping')"
+docker exec reactive-store-mongodb mongosh --eval "db.adminCommand('ping')"
 ```
 
 #### Salida esperada
 
 ```
 NAME              IMAGE             STATUS
-lab03-postgres    postgres:16-alpine   Up (healthy)
-lab03-mongodb     mongo:7.0            Up (healthy)
+reactive-store-postgres    postgres:16-alpine   Up (healthy)
+reactive-store-mongodb     mongo:7.0            Up (healthy)
 
 # PostgreSQL debe mostrar:
  count
@@ -450,10 +470,10 @@ Implementar las entidades de dominio, los repositorios reactivos para ambos moto
 
 **2.1 Crear el dominio compartido**
 
-Archivo `src/main/java/com/curso/catalog/domain/Product.java`:
+Archivo `src/main/java/com/netec/reactivestore/model/Product.java`:
 
 ```java
-package com.curso.catalog.domain;
+package com.netec.reactivestore.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -486,10 +506,10 @@ public class Product {
 
 **2.2 Entidad R2DBC**
 
-Archivo `src/main/java/com/curso/catalog/domain/ProductEntity.java`:
+Archivo `src/main/java/com/netec/reactivestore/model/ProductEntity.java`:
 
 ```java
-package com.curso.catalog.domain;
+package com.netec.reactivestore.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -572,10 +592,10 @@ public class ProductEntity {
 
 **2.3 Documento MongoDB**
 
-Archivo `src/main/java/com/curso/catalog/domain/ProductDocument.java`:
+Archivo `src/main/java/com/netec/reactivestore/model/ProductDocument.java`:
 
 ```java
-package com.curso.catalog.domain;
+package com.netec.reactivestore.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -658,12 +678,12 @@ public class ProductDocument {
 
 **2.4 Repositorio R2DBC**
 
-Archivo `src/main/java/com/curso/catalog/repository/R2dbcProductRepository.java`:
+Archivo `src/main/java/com/netec/reactivestore/repository/R2dbcProductRepository.java`:
 
 ```java
-package com.curso.catalog.repository;
+package com.netec.reactivestore.repository;
 
-import com.curso.catalog.domain.ProductEntity;
+import com.netec.reactivestore.model.ProductEntity;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.r2dbc.repository.Query;
@@ -705,12 +725,12 @@ public interface R2dbcProductRepository extends ReactiveCrudRepository<ProductEn
 
 **2.5 Repositorio MongoDB**
 
-Archivo `src/main/java/com/curso/catalog/repository/MongoProductRepository.java`:
+Archivo `src/main/java/com/netec/reactivestore/repository/MongoProductRepository.java`:
 
 ```java
-package com.curso.catalog.repository;
+package com.netec.reactivestore.repository;
 
-import com.curso.catalog.domain.ProductDocument;
+import com.netec.reactivestore.model.ProductDocument;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.Query;
@@ -747,12 +767,12 @@ public interface MongoProductRepository extends ReactiveMongoRepository<ProductD
 
 **2.6 Interfaz del servicio reactivo**
 
-Archivo `src/main/java/com/curso/catalog/service/ProductService.java`:
+Archivo `src/main/java/com/netec/reactivestore/service/ProductService.java`:
 
 ```java
-package com.curso.catalog.service;
+package com.netec.reactivestore.service;
 
-import com.curso.catalog.domain.Product;
+import com.netec.reactivestore.model.Product;
 import org.springframework.data.domain.Pageable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -779,14 +799,14 @@ public interface ProductService {
 
 **2.7 Implementación del servicio R2DBC**
 
-Archivo `src/main/java/com/curso/catalog/service/R2dbcProductService.java`:
+Archivo `src/main/java/com/netec/reactivestore/service/R2dbcProductService.java`:
 
 ```java
-package com.curso.catalog.service;
+package com.netec.reactivestore.service;
 
-import com.curso.catalog.domain.Product;
-import com.curso.catalog.domain.ProductEntity;
-import com.curso.catalog.repository.R2dbcProductRepository;
+import com.netec.reactivestore.model.Product;
+import com.netec.reactivestore.model.ProductEntity;
+import com.netec.reactivestore.repository.R2dbcProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -903,14 +923,14 @@ public class R2dbcProductService implements ProductService {
 
 **2.8 Implementación del servicio MongoDB**
 
-Archivo `src/main/java/com/curso/catalog/service/MongoProductService.java`:
+Archivo `src/main/java/com/netec/reactivestore/service/MongoProductService.java`:
 
 ```java
-package com.curso.catalog.service;
+package com.netec.reactivestore.service;
 
-import com.curso.catalog.domain.Product;
-import com.curso.catalog.domain.ProductDocument;
-import com.curso.catalog.repository.MongoProductRepository;
+import com.netec.reactivestore.model.Product;
+import com.netec.reactivestore.model.ProductDocument;
+import com.netec.reactivestore.repository.MongoProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -1038,13 +1058,13 @@ Implementar el controller con endpoints de paginación reactiva y streaming SSE 
 
 **3.1 Crear el ProductController**
 
-Archivo `src/main/java/com/curso/catalog/controller/ProductController.java`:
+Archivo `src/main/java/com/netec/reactivestore/controller/ProductController.java`:
 
 ```java
-package com.curso.catalog.controller;
+package com.netec.reactivestore.controller;
 
-import com.curso.catalog.domain.Product;
-import com.curso.catalog.service.ProductService;
+import com.netec.reactivestore.model.Product;
+import com.netec.reactivestore.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -1060,38 +1080,38 @@ import java.math.BigDecimal;
 
 @Slf4j
 @RestController
-@RequestMapping("/products")
+@RequestMapping("/api/products")
 @RequiredArgsConstructor
 public class ProductController {
 
     private final ProductService productService;
 
     /**
-     * GET /products?page=0&size=10
+     * GET /api/products?page=0&size=10
      * Paginación reactiva: devuelve un Flux paginado de productos activos.
      */
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
     public Flux<Product> getProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        log.debug("GET /products?page={}&size={}", page, size);
+        log.debug("GET /api/products?page={}&size={}", page, size);
         return productService.findAll(PageRequest.of(page, size));
     }
 
     /**
-     * GET /products/stream
+     * GET /api/products/stream
      * Streaming de productos como Server-Sent Events (SSE).
      * El cliente recibe cada producto a medida que se emite, con backpressure.
      * NOTA: MediaType.TEXT_EVENT_STREAM_VALUE es esencial para SSE.
      */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<Product> streamProducts() {
-        log.debug("GET /products/stream — iniciando stream SSE");
+        log.debug("GET /api/products/stream — iniciando stream SSE");
         return productService.streamAllProducts();
     }
 
     /**
-     * GET /products/{id}
+     * GET /api/products/{id}
      * Búsqueda por ID con manejo de not-found reactivo.
      */
     @GetMapping("/{id}")
@@ -1102,7 +1122,7 @@ public class ProductController {
     }
 
     /**
-     * GET /products/category/{category}?page=0&size=10
+     * GET /api/products/category/{category}?page=0&size=10
      * Filtrado por categoría con paginación.
      */
     @GetMapping("/category/{category}")
@@ -1114,7 +1134,7 @@ public class ProductController {
     }
 
     /**
-     * GET /products/price-range?min=10&max=500
+     * GET /api/products/price-range?min=10&max=500
      * Filtrado por rango de precios.
      */
     @GetMapping("/price-range")
@@ -1125,7 +1145,7 @@ public class ProductController {
     }
 
     /**
-     * POST /products
+     * POST /api/products
      * Crear un nuevo producto.
      */
     @PostMapping
@@ -1135,7 +1155,7 @@ public class ProductController {
     }
 
     /**
-     * PUT /products/{id}
+     * PUT /api/products/{id}
      * Actualizar un producto existente.
      */
     @PutMapping("/{id}")
@@ -1149,7 +1169,7 @@ public class ProductController {
     }
 
     /**
-     * DELETE /products/{id}
+     * DELETE /api/products/{id}
      */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -1158,7 +1178,7 @@ public class ProductController {
     }
 
     /**
-     * POST /products/transfer-inventory
+     * POST /api/products/transfer-inventory
      * Transferencia de inventario con transacción reactiva.
      * Body: { "sourceId": "1", "targetId": "2", "quantity": 5 }
      */
@@ -1184,13 +1204,13 @@ public class ProductController {
 mvn spring-boot:run -Dspring-boot.run.profiles=relational
 
 # En otra terminal, verificar los endpoints
-curl -s http://localhost:8080/products | python3 -m json.tool
+curl -s http://localhost:8080/api/products | python3 -m json.tool
 
 # Probar paginación
-curl -s "http://localhost:8080/products?page=0&size=3" | python3 -m json.tool
+curl -s "http://localhost:8080/api/products?page=0&size=3" | python3 -m json.tool
 
 # Probar filtrado por categoría
-curl -s "http://localhost:8080/products/category/electronics" | python3 -m json.tool
+curl -s "http://localhost:8080/api/products/category/electronics" | python3 -m json.tool
 ```
 
 **3.3 Probar el endpoint de streaming**
@@ -1198,7 +1218,7 @@ curl -s "http://localhost:8080/products/category/electronics" | python3 -m json.
 ```bash
 # Probar streaming SSE (Ctrl+C para detener)
 # Cada producto aparece con un delay de 500ms
-curl -N -H "Accept: text/event-stream" http://localhost:8080/products/stream
+curl -N -H "Accept: text/event-stream" http://localhost:8080/api/products/stream
 ```
 
 #### Salida esperada del streaming
@@ -1218,12 +1238,12 @@ data:{"id":"3","name":"Monitor 4K 27\"","category":"electronics","price":449.99,
 mvn spring-boot:run -Dspring-boot.run.profiles=document
 
 # Primero insertar datos en MongoDB (el init.sql no aplica a Mongo)
-curl -s -X POST http://localhost:8080/products \
+curl -s -X POST http://localhost:8080/api/products \
   -H "Content-Type: application/json" \
   -d '{"name":"Laptop Pro 15","description":"Laptop de alto rendimiento","category":"electronics","price":1299.99,"stock":50,"active":true}'
 
 # Verificar que el endpoint funciona igual
-curl -s http://localhost:8080/products | python3 -m json.tool
+curl -s http://localhost:8080/api/products | python3 -m json.tool
 ```
 
 #### Verificación del Bloque 3
@@ -1244,35 +1264,35 @@ Demostrar el comportamiento de `@Transactional` en R2DBC con un rollback automá
 ```bash
 # Asegúrate de estar ejecutando con perfil 'relational'
 # Verificar el stock actual de los productos 1 y 2
-curl -s http://localhost:8080/products/1 | python3 -m json.tool
-curl -s http://localhost:8080/products/2 | python3 -m json.tool
+curl -s http://localhost:8080/api/products/1 | python3 -m json.tool
+curl -s http://localhost:8080/api/products/2 | python3 -m json.tool
 ```
 
 **4.2 Prueba de transferencia exitosa**
 
 ```bash
 # Transferir 10 unidades del producto 1 al producto 2
-curl -s -X POST http://localhost:8080/products/transfer-inventory \
+curl -s -X POST http://localhost:8080/api/products/transfer-inventory \
   -H "Content-Type: application/json" \
   -d '{"sourceId":"1","targetId":"2","quantity":10}' | python3 -m json.tool
 
 # Verificar que el stock cambió correctamente
-curl -s http://localhost:8080/products/1 | python3 -m json.tool  # stock debe ser 40
-curl -s http://localhost:8080/products/2 | python3 -m json.tool  # stock debe ser 210
+curl -s http://localhost:8080/api/products/1 | python3 -m json.tool  # stock debe ser 40
+curl -s http://localhost:8080/api/products/2 | python3 -m json.tool  # stock debe ser 210
 ```
 
 **4.3 Prueba de rollback por stock insuficiente**
 
 ```bash
 # Intentar transferir más unidades de las disponibles (debería fallar)
-curl -s -X POST http://localhost:8080/products/transfer-inventory \
+curl -s -X POST http://localhost:8080/api/products/transfer-inventory \
   -H "Content-Type: application/json" \
   -d '{"sourceId":"1","targetId":"2","quantity":9999}' \
   -w "\nHTTP Status: %{http_code}\n"
 
 # Verificar que el stock NO cambió (rollback efectivo)
-curl -s http://localhost:8080/products/1 | python3 -m json.tool  # stock debe seguir siendo 40
-curl -s http://localhost:8080/products/2 | python3 -m json.tool  # stock debe seguir siendo 210
+curl -s http://localhost:8080/api/products/1 | python3 -m json.tool  # stock debe seguir siendo 40
+curl -s http://localhost:8080/api/products/2 | python3 -m json.tool  # stock debe seguir siendo 210
 ```
 
 #### Salida esperada del rollback
@@ -1297,7 +1317,7 @@ DEBUG o.s.t.r.TransactionSynchronizationManager - Rolling back R2DBC transaction
 ```bash
 # Script de verificación completo
 echo "=== Verificación de Rollback ==="
-STOCK_1=$(curl -s http://localhost:8080/products/1 | python3 -c "import sys,json; print(json.load(sys.stdin)['stock'])")
+STOCK_1=$(curl -s http://localhost:8080/api/products/1 | python3 -c "import sys,json; print(json.load(sys.stdin)['stock'])")
 echo "Stock producto 1: $STOCK_1 (esperado: 40)"
 ```
 
@@ -1312,10 +1332,10 @@ Integrar un `WebClient` que consulta un servicio de pricing externo simulado con
 
 **5.1 Crear el cliente del servicio de pricing**
 
-Archivo `src/main/java/com/curso/catalog/client/PricingClient.java`:
+Archivo `src/main/java/com/netec/reactivestore/client/PricingClient.java`:
 
 ```java
-package com.curso.catalog.client;
+package com.netec.reactivestore.client;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -1343,7 +1363,7 @@ public class PricingClient {
 
     public PricingClient(
             WebClient.Builder webClientBuilder,
-            @Value("${pricing.service.url:http://localhost:8090}") String pricingServiceUrl) {
+            @Value("${EXTERNAL_API_URL:http://localhost:8090}") String pricingServiceUrl) {
         this.webClient = webClientBuilder
                 .baseUrl(pricingServiceUrl)
                 .build();
@@ -1418,7 +1438,7 @@ public Mono<Product> findByIdWithUpdatedPrice(String id) {
 ```java
 // Agregar en ProductController.java:
 /**
- * GET /products/{id}/price
+ * GET /api/products/{id}/price
  * Obtiene el producto con precio actualizado desde el servicio externo.
  * Incluye fallback al precio local si el servicio externo no responde.
  */
@@ -1443,10 +1463,10 @@ Agrega `PricingClient pricingClient` como campo inyectado en `ProductController`
 
 **5.4 Crear el test con MockWebServer**
 
-Archivo `src/test/java/com/curso/catalog/client/PricingClientTest.java`:
+Archivo `src/test/java/com/netec/reactivestore/client/PricingClientTest.java`:
 
 ```java
-package com.curso.catalog.client;
+package com.netec.reactivestore.client;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -1561,46 +1581,46 @@ sleep 10  # Esperar a que la aplicación inicie
 
 # 2. Validar endpoint de listado con paginación
 echo "=== Paginación ==="
-curl -s "http://localhost:8080/products?page=0&size=3" | python3 -m json.tool
+curl -s "http://localhost:8080/api/products?page=0&size=3" | python3 -m json.tool
 
 # 3. Validar filtrado por categoría
 echo "=== Filtrado por categoría ==="
-curl -s "http://localhost:8080/products/category/electronics" | python3 -m json.tool
+curl -s "http://localhost:8080/api/products/category/electronics" | python3 -m json.tool
 
 # 4. Validar rango de precios
 echo "=== Rango de precios ==="
-curl -s "http://localhost:8080/products/price-range?min=50&max=500" | python3 -m json.tool
+curl -s "http://localhost:8080/api/products/price-range?min=50&max=500" | python3 -m json.tool
 
 # 5. Validar creación de producto
 echo "=== Crear producto ==="
-curl -s -X POST http://localhost:8080/products \
+curl -s -X POST http://localhost:8080/api/products \
   -H "Content-Type: application/json" \
   -d '{"name":"Webcam HD","description":"Webcam 1080p","category":"peripherals","price":79.99,"stock":100,"active":true}' \
   | python3 -m json.tool
 
 # 6. Validar streaming (recibir 3 eventos y cancelar)
 echo "=== Streaming SSE (3 eventos) ==="
-curl -N -H "Accept: text/event-stream" http://localhost:8080/products/stream &
+curl -N -H "Accept: text/event-stream" http://localhost:8080/api/products/stream &
 STREAM_PID=$!
 sleep 3
-kill $STREAM_PID 2>/dev/null
+# Detén el cliente SSE con Ctrl+C.
 
 # 7. Ejecutar todos los tests
 echo "=== Tests ==="
 mvn test -q
 
 # Limpiar
-kill $APP_PID 2>/dev/null
+# Detén la aplicación con Ctrl+C.
 ```
 
 ### Criterios de aceptación
 
 | Criterio                                               | Resultado esperado                          |
 |--------------------------------------------------------|---------------------------------------------|
-| `GET /products?page=0&size=3` devuelve exactamente 3 productos | Array JSON con 3 elementos            |
-| `GET /products/stream` emite eventos SSE separados     | `data:{...}` cada ~500 ms                   |
-| `POST /products/transfer-inventory` con stock suficiente | HTTP 200 con producto actualizado         |
-| `POST /products/transfer-inventory` con stock insuficiente | HTTP 400 y stocks sin cambios          |
+| `GET /api/products?page=0&size=3` devuelve exactamente 3 productos | Array JSON con 3 elementos            |
+| `GET /api/products/stream` emite eventos SSE separados     | `data:{...}` cada ~500 ms                   |
+| `POST /api/products/transfer-inventory` con stock suficiente | HTTP 200 con producto actualizado         |
+| `POST /api/products/transfer-inventory` con stock insuficiente | HTTP 400 y stocks sin cambios          |
 | Tests de `PricingClientTest` pasan todos               | 3/3 tests en verde                          |
 | Aplicación inicia con perfil `document` sin errores    | Spring context carga correctamente          |
 
@@ -1628,21 +1648,22 @@ kill $APP_PID 2>/dev/null
 
 4. Verifica el perfil activo con:
 ```bash
-curl -s http://localhost:8080/actuator/env | python3 -m json.tool | grep "active"
+# Revisa en el log de arranque: "The following profile is active".
+# No expongas /actuator/env para comprobar el perfil.
 ```
 
 ---
 
-### Problema 2: El endpoint `/products/stream` devuelve todos los productos de golpe en lugar de hacer streaming
+### Problema 2: El endpoint `/api/products/stream` devuelve todos los productos de golpe en lugar de hacer streaming
 
-**Síntomas**: Al llamar a `GET /products/stream`, el cliente recibe todos los datos en una sola respuesta en lugar de recibirlos progresivamente. No se observa el delay de 500 ms entre elementos.
+**Síntomas**: Al llamar a `GET /api/products/stream`, el cliente recibe todos los datos en una sola respuesta en lugar de recibirlos progresivamente. No se observa el delay de 500 ms entre elementos.
 
 **Causa**: El cliente HTTP (navegador, Postman, curl sin `-N`) está acumulando el buffer antes de mostrar la respuesta. Alternativamente, falta el header `Accept: text/event-stream` en la petición, lo que hace que Spring WebFlux serialice el `Flux` completo como un array JSON.
 
 **Solución**:
 1. Usa `curl` con la opción `-N` (no-buffer) y el header correcto:
 ```bash
-curl -N -H "Accept: text/event-stream" http://localhost:8080/products/stream
+curl -N -H "Accept: text/event-stream" http://localhost:8080/api/products/stream
 ```
 2. Verifica que el endpoint en el controller declare `produces = MediaType.TEXT_EVENT_STREAM_VALUE`.
 3. En Postman, configura el header `Accept: text/event-stream` y activa la opción "Send and Download" para ver la respuesta en tiempo real.
@@ -1654,22 +1675,22 @@ curl -N -H "Accept: text/event-stream" http://localhost:8080/products/stream
 
 ```bash
 # 1. Detener la aplicación Spring Boot (si está en ejecución)
-# Presionar Ctrl+C en la terminal donde corre, o:
-pkill -f "spring-boot:run" 2>/dev/null
+# Presiona Ctrl+C en la terminal que ejecuta Maven.
 
 # 2. Detener y eliminar los contenedores Docker
 docker compose down
 
-# 3. Eliminar volúmenes de datos (opcional — borra todos los datos)
-docker compose down -v
+# Alternativa destructiva: elimina también los datos locales.
+# Ejecuta esta opción EN LUGAR de la anterior, no después:
+# docker compose down -v
 
-# 4. Verificar que los contenedores se eliminaron
-docker ps -a | grep lab03
+# 3. Verificar que los contenedores se eliminaron
+docker ps -a | grep reactive-store
 
-# 5. Limpiar artefactos de Maven (opcional)
+# 4. Limpiar artefactos de Maven (opcional)
 mvn clean
 
-# 6. Liberar puertos (verificar que 5432, 27017 y 8080 están libres)
+# 5. Verificar puertos (Linux/macOS)
 lsof -i :5432 -i :27017 -i :8080 2>/dev/null || echo "Puertos libres"
 ```
 
@@ -1704,6 +1725,81 @@ En este laboratorio construiste una API de catálogo de productos que demuestra 
 - [Project Reactor — Referencia de operadores](https://projectreactor.io/docs/core/release/reference/)
 - [MockWebServer — OkHttp](https://github.com/square/okhttp/tree/master/mockwebserver)
 - [R2DBC — Especificación oficial](https://r2dbc.io/)
+
+## Guía didáctica de cierre
+
+### Escenario y objetivo operativo
+
+El prototipo en memoria debe evolucionar a persistencia real sin cambiar el contrato HTTP. La evidencia final consiste en iniciar cada perfil por separado, ejecutar consultas, observar SSE, demostrar rollback R2DBC y probar éxito y fallback de WebClient.
+
+Los perfiles comparan alternativas; no implican que una aplicación productiva deba usar simultáneamente PostgreSQL y MongoDB.
+
+### Validación final observable
+
+- [ ] Los perfiles `relational` y `document` inician por separado.
+- [ ] `/api/products` conserva el contrato del capítulo 2.
+- [ ] La paginación se ejecuta en el repositorio y limita resultados.
+- [ ] El error de inventario revierte la transacción R2DBC.
+- [ ] WebClient distingue fallos transitorios de errores 4xx.
+- [ ] No existe `block()` en métodos transaccionales.
+
+### Problemas comunes adicionales
+
+- Si `createdAt` queda nulo, habilita auditing reactivo para el perfil o asigna el valor en el servicio.
+- Si MongoDB no revierte operaciones, recuerda que una transacción multi-documento requiere replica set y `ReactiveMongoTransactionManager`.
+- Si el stream llega agrupado, verifica el media type y que el cliente no almacene todo el body.
+
+### Preguntas de reflexión
+
+1. ¿Qué capas permanecen iguales al cambiar de repositorio?
+2. ¿Por qué el contexto reactivo es necesario para una transacción R2DBC?
+3. ¿Qué diferencia existe entre paginar en base de datos y aplicar `take` después?
+4. ¿Qué errores de WebClient deben reintentarse?
+5. ¿Cuándo elegirías R2DBC y cuándo Mongo Reactive?
+
+## Seguridad y compatibilidad multiplataforma
+
+No mantengas logging de datos en `DEBUG` o `TRACE`. Puede revelar consultas, identificadores y parámetros. Usa `APP_LOG_LEVEL` y `DATA_LOG_LEVEL` solo de forma temporal y nunca registres contraseñas, tokens o cabeceras de autorización.
+
+Antes de iniciar Docker Compose:
+
+```bash
+cp .env.example .env
+# Edita .env y cambia las contraseñas de ejemplo.
+docker compose up -d
+```
+
+PowerShell:
+
+```powershell
+Copy-Item ".env.example" ".env"
+
+$paths = @(
+  "src/main/java/com/netec/reactivestore/config",
+  "src/main/java/com/netec/reactivestore/controller",
+  "src/main/java/com/netec/reactivestore/model",
+  "src/main/java/com/netec/reactivestore/repository",
+  "src/main/java/com/netec/reactivestore/service",
+  "src/main/java/com/netec/reactivestore/client",
+  "src/main/resources/db",
+  "src/test/java/com/netec/reactivestore"
+)
+$paths | ForEach-Object {
+  New-Item -ItemType Directory -Force -Path $_ | Out-Null
+}
+
+Invoke-RestMethod -Uri "http://localhost:8080/api/products"
+Invoke-RestMethod -Uri "http://localhost:8080/api/products/1"
+Get-NetTCPConnection -LocalPort 5432,27017,8080 -ErrorAction SilentlyContinue
+```
+
+Reglas de cierre:
+
+- Detén Spring Boot con `Ctrl+C`.
+- Detén solo los servicios del laboratorio con `docker compose down`.
+- Usa `docker compose down -v` únicamente si aceptas borrar los datos locales.
+- No finalices procesos Java por nombre global.
+- No expongas `/actuator/env`; puede revelar configuración sensible.
 
 ---
 LAB_END---
