@@ -1,6 +1,12 @@
+<img src="images/neteclogo (2).png" alt="logo" width="300"/>
+
 # Spring Boot con WebFlux — Reactive Store
 
-Curso práctico para desarrollar APIs no bloqueantes con Spring WebFlux y Project Reactor.
+## Plataforma de laboratorios
+
+Te damos la bienvenida a la **plataforma de laboratorios** del curso **Spring Boot con WebFlux — Reactive Store**. Aquí podrás explorar diferentes tecnologías a través de prácticas guiadas. ¡Desarrolla tus habilidades y lleva tus conocimientos al siguiente nivel!
+
+Curso práctico para desarrollar APIs no bloqueantes con Spring WebFlux y Project Reactor, optimizadas para alta concurrencia y orientadas a entornos empresariales.
 
 ## Contrato técnico común
 
@@ -58,7 +64,9 @@ Placeholders estándar:
 
 Los ejemplos de configuración usan variables de entorno equivalentes, por ejemplo `${DATABASE_URL}`.
 
-## Laboratorios
+## Lista de laboratorios
+
+Cada uno de estos laboratorios está diseñado para ofrecerte una experiencia práctica. Haz clic en los enlaces para comenzar.
 
 ### Capítulo 1
 
@@ -107,9 +115,6 @@ Los ejemplos de configuración usan variables de entorno equivalentes, por ejemp
 - No mezclar Maven y Gradle.
 - No usar `block()` ni suscripciones manuales en controllers o servicios.
 - Configurar credenciales y URLs externas mediante variables de entorno.
-
-## Flujo de colaboración
-
 - Trabajar en la rama `changes_course`.
 - Crear Pull Request hacia `main`.
 - Usar `Squash and merge`.
@@ -131,3 +136,11 @@ Los ejemplos de configuración usan variables de entorno equivalentes, por ejemp
 - Variables: `$NOMBRE` en Bash/Zsh y `$env:NOMBRE` en PowerShell.
 - Detén Spring Boot con `Ctrl+C` en la terminal que lo inició.
 - Limita la limpieza a `docker compose down`; no elimines recursos globales.
+
+## 📬 **Contacto y más información**
+
+Si tienes alguna pregunta o necesitas más detalles, no dudes en [contactarnos](mailto:soporte@netec.com). También puedes encontrar más recursos en nuestra [página](https://netec.com).
+
+---
+
+¡Gracias por visitar nuestra plataforma! No olvides revisar todos los laboratorios y comenzar tu viaje de aprendizaje hoy mismo.
